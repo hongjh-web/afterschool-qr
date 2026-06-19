@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, addDoc, onSnapshot, setDoc, doc } from "firebase/firestore";
+import * as XLSX from "xlsx";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDdhs01usjOPXu5F0GW6XFwYDoDJ9uirJ4",
@@ -14,7 +15,28 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-const CLASSES = ["수학반", "영어반", "과학반", "코딩반", "미술반"];
+const CLASSES = [
+  "글로벌 문화탐험대 A반",
+  "글로벌 문화탐험대 B반",
+  "디지털 웹툰 스튜디오",
+  "K-POP 댄스",
+  "스토리한국사탐험대 A반",
+  "스토리한국사탐험대 B반",
+  "글로벌중국어",
+  "영어뮤지컬",
+  "잉글리시 톡톡 A반",
+  "잉글리시 톡톡 B반",
+  "사이언스 탐구랩 A반",
+  "사이언스 탐구랩 B반",
+  "잉글리시 스피치&디베이트 클럽 A반",
+  "잉글리시 스피치&디베이트 클럽 B반",
+  "글로벌일본어",
+  "AI키성장바른자세",
+  "잉글리시 플레이존 A반",
+  "잉글리시 플레이존 B반",
+  "스마트레고",
+  "아카펠라합창"
+];
 
 function generateQRUrl(text, size) {
   return "https://api.qrserver.com/v1/create-qr-code/?size=" + size + "x" + size + "&data=" + encodeURIComponent(text) + "&color=1a3a5c&bgcolor=ffffff&qzone=2";
@@ -22,7 +44,7 @@ function generateQRUrl(text, size) {
 
 function generateId() {
   const year = new Date().getFullYear();
-  const rand = String(Math.floor(Math.random() * 900) + 100).padStart(3, "0");
+  const rand = String(Math.floor(Math.random() * 9000) + 1000).padStart(4, "0");
   return "AS-" + year + "-" + rand;
 }
 
@@ -47,7 +69,7 @@ function Badge(props) {
   };
   const s = cfg[type] || cfg["미확인"];
   return (
-    <span style={{ background: s.bg, color: s.color, padding: "2px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+    <span style={{ background: s.bg, color: s.color, padding: "2px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>
       {s.label}
     </span>
   );
@@ -198,6 +220,150 @@ function RegistrationForm(props) {
   );
 }
 
+// ── 엑셀 일괄 업로드 모달 ───────────────────────────────────────────────────
+function ExcelUploadModal(props) {
+  const onAddMany = props.onAddMany;
+  const onClose = props.onClose;
+  const fileRef = useRef();
+  const [rows, setRows] = useState([]);
+  const [errors, setErrors] = useState([]);
+  const [fileName, setFileName] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  function downloadTemplate() {
+    const sample = [
+      { 이름: "김민준", 학년반: "3학년 1반", 수강과목: CLASSES[0], 보호자연락처: "010-1234-5678", 보호자이메일: "parent@email.com" },
+      { 이름: "이서연", 학년반: "3학년 2반", 수강과목: CLASSES[1], 보호자연락처: "010-2345-6789", 보호자이메일: "" }
+    ];
+    const ws = XLSX.utils.json_to_sheet(sample);
+    ws["!cols"] = [{ wch: 10 }, { wch: 12 }, { wch: 30 }, { wch: 16 }, { wch: 22 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "수강생목록");
+    XLSX.writeFile(wb, "수강생_등록_양식.xlsx");
+  }
+
+  function handleFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setFileName(file.name);
+    setDone(false);
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+      const data = new Uint8Array(evt.target.result);
+      const wb = XLSX.read(data, { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+      const parsed = [];
+      const errs = [];
+      json.forEach(function(row, idx) {
+        const name = String(row["이름"] || "").trim();
+        const grade = String(row["학년반"] || "").trim();
+        const classroom = String(row["수강과목"] || "").trim();
+        const parentPhone = String(row["보호자연락처"] || "").trim();
+        const parentEmail = String(row["보호자이메일"] || "").trim();
+        const lineNum = idx + 2;
+
+        if (!name || !grade || !parentPhone) {
+          errs.push("줄 " + lineNum + ": 이름/학년반/보호자연락처는 필수입니다.");
+          return;
+        }
+        if (classroom && CLASSES.indexOf(classroom) === -1) {
+          errs.push("줄 " + lineNum + ": '" + classroom + "' 은 등록된 과목명이 아닙니다.");
+          return;
+        }
+        parsed.push({
+          name: name,
+          grade: grade,
+          classroom: classroom || CLASSES[0],
+          parentPhone: parentPhone,
+          parentEmail: parentEmail,
+          id: generateId()
+        });
+      });
+      setRows(parsed);
+      setErrors(errs);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function handleUpload() {
+    if (rows.length === 0) return;
+    setUploading(true);
+    onAddMany(rows).then(function() {
+      setUploading(false);
+      setDone(true);
+    });
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(10,20,40,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+      <div style={{ background: "#fff", borderRadius: 20, padding: 36, maxWidth: 520, width: "92%", maxHeight: "85vh", overflowY: "auto" }}>
+        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>엑셀로 수강생 일괄 등록</div>
+        <div style={{ fontSize: 13, color: "#5a7a9a", marginBottom: 20 }}>
+          이름, 학년반, 수강과목, 보호자연락처, 보호자이메일 열을 가진 엑셀 파일을 업로드하세요.
+        </div>
+
+        <button onClick={downloadTemplate} style={{ background: "#e8f0fa", color: "#1a3a5c", border: "none", borderRadius: 10, padding: "10px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16 }}>
+          📥 등록 양식 다운로드
+        </button>
+
+        <div
+          onClick={function() { fileRef.current.click(); }}
+          style={{ border: "2px dashed #c5dff7", borderRadius: 14, padding: "28px 16px", textAlign: "center", cursor: "pointer", marginBottom: 16, background: "#f8fafd" }}
+        >
+          <div style={{ fontSize: 28, marginBottom: 6 }}>📂</div>
+          <div style={{ fontSize: 13, color: "#5a7a9a", fontWeight: 600 }}>{fileName || "클릭해서 엑셀 파일 선택 (.xlsx, .csv)"}</div>
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{ display: "none" }} />
+        </div>
+
+        {errors.length > 0 ? (
+          <div style={{ background: "#fce4ec", borderRadius: 10, padding: 14, marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, color: "#c62828", marginBottom: 6, fontSize: 13 }}>⚠ 오류 {errors.length}건 (해당 행은 제외됩니다)</div>
+            {errors.map(function(e, i) {
+              return <div key={i} style={{ fontSize: 12, color: "#c62828" }}>{e}</div>;
+            })}
+          </div>
+        ) : null}
+
+        {rows.length > 0 ? (
+          <div style={{ background: "#e8f5e9", borderRadius: 10, padding: 14, marginBottom: 20 }}>
+            <div style={{ fontWeight: 700, color: "#2e7d32", marginBottom: 8, fontSize: 13 }}>✓ 등록 가능한 학생 {rows.length}명</div>
+            <div style={{ maxHeight: 160, overflowY: "auto" }}>
+              {rows.map(function(r, i) {
+                return (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#2e7d32", padding: "3px 0" }}>
+                    <span style={{ fontWeight: 700 }}>{r.name}</span>
+                    <span>{r.grade} · {r.classroom}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {done ? (
+          <div style={{ background: "#e3f2fd", borderRadius: 10, padding: 14, marginBottom: 16, textAlign: "center", color: "#1565c0", fontWeight: 700 }}>
+            🎉 {rows.length}명 등록 완료!
+          </div>
+        ) : null}
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, background: "#f0f5fb", color: "#5a7a9a", border: "none", borderRadius: 10, padding: 12, cursor: "pointer" }}>
+            {done ? "닫기" : "취소"}
+          </button>
+          {!done ? (
+            <button onClick={handleUpload} disabled={rows.length === 0 || uploading} style={{ flex: 2, background: rows.length === 0 ? "#c5d3e0" : "#1a3a5c", color: "#fff", border: "none", borderRadius: 10, padding: 12, cursor: rows.length === 0 ? "default" : "pointer" }}>
+              {uploading ? "등록 중..." : "전체 등록하기 (" + rows.length + "명)"}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ParentView(props) {
   const students = props.students;
   const attendance = props.attendance;
@@ -268,6 +434,7 @@ export default function App() {
   const [showQR, setShowQR] = useState(null);
   const [showScanner, setShowScanner] = useState(false);
   const [showRegForm, setShowRegForm] = useState(false);
+  const [showExcelUpload, setShowExcelUpload] = useState(false);
   const [filterClass, setFilterClass] = useState("전체");
   const [searchQuery, setSearchQuery] = useState("");
   const [notification, setNotification] = useState(null);
@@ -318,6 +485,15 @@ export default function App() {
     });
   }
 
+  function addManyStudents(list) {
+    const promises = list.map(function(data) {
+      return addDoc(collection(db, "students"), data);
+    });
+    return Promise.all(promises).then(function() {
+      notify(list.length + "명의 학생이 일괄 등록되었습니다.");
+    });
+  }
+
   const allClasses = ["전체"].concat(CLASSES);
 
   const filtered = students.filter(function(s) {
@@ -342,9 +518,9 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", background: "#f0f5fb", fontFamily: "sans-serif" }}>
       <div style={{ background: "#0d1f3c", padding: "0 24px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64 }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64, flexWrap: "wrap" }}>
           <div>
-            <div style={{ color: "#fff", fontWeight: 800, fontSize: 16 }}>예원초 온동네 돌봄·교육센터 출결관리시스템</div>
+            <div style={{ color: "#fff", fontWeight: 800, fontSize: 16 }}>예원초 온동네 돌봄•교육센터 출결관리시스템</div>
             <div style={{ color: "#7ab3d4", fontSize: 11 }}>{fmtDate()}</div>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
@@ -390,35 +566,32 @@ export default function App() {
                 placeholder="이름, 학번, 학년반 검색..."
                 style={{ flex: 1, minWidth: 200, border: "1.5px solid #d0dce8", borderRadius: 10, padding: 10 }}
               />
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <select
+                value={filterClass}
+                onChange={function(e) { setFilterClass(e.target.value); }}
+                style={{ border: "1.5px solid #d0dce8", borderRadius: 10, padding: 10, fontSize: 13, background: "#fff", maxWidth: 220 }}
+              >
                 {allClasses.map(function(c) {
-                  return (
-                    <button
-                      key={c}
-                      onClick={function() { setFilterClass(c); }}
-                      style={{ padding: "10px 14px", borderRadius: 10, border: "none", cursor: "pointer", background: filterClass === c ? "#1a3a5c" : "#fff", color: filterClass === c ? "#fff" : "#5a7a9a" }}
-                    >
-                      {c}
-                    </button>
-                  );
+                  return <option key={c} value={c}>{c}</option>;
                 })}
-              </div>
+              </select>
+              <button onClick={function() { setShowExcelUpload(true); }} style={{ background: "#2e7d32", color: "#fff", border: "none", borderRadius: 10, padding: "10px 16px", cursor: "pointer", fontWeight: 700 }}>📊 엑셀 일괄 등록</button>
               <button onClick={function() { setShowRegForm(true); }} style={{ background: "#1a3a5c", color: "#fff", border: "none", borderRadius: 10, padding: "10px 20px", cursor: "pointer" }}>+ 수강생 등록</button>
             </div>
 
             {activeTab === "students" ? (
-              <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden" }}>
+              <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ background: "#f0f5fb" }}>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12 }}>고유번호</th>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12 }}>이름</th>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12 }}>학년반</th>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12 }}>과목</th>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12 }}>연락처</th>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12 }}>출결</th>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12 }}>QR</th>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12 }}>처리</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>고유번호</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>이름</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>학년반</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>과목</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>연락처</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>출결</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>QR</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>처리</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -429,16 +602,16 @@ export default function App() {
                       else if (att && att.checkin) { status = "입실"; }
                       return (
                         <tr key={s.id} style={{ borderBottom: "1px solid #f0f5fb" }}>
-                          <td style={{ padding: 14, fontFamily: "monospace", fontSize: 12 }}>{s.id}</td>
-                          <td style={{ padding: 14, fontWeight: 700 }}>{s.name}</td>
-                          <td style={{ padding: 14, fontSize: 13 }}>{s.grade}</td>
-                          <td style={{ padding: 14 }}>{s.classroom}</td>
-                          <td style={{ padding: 14, fontSize: 12 }}>{s.parentPhone}</td>
+                          <td style={{ padding: 14, fontFamily: "monospace", fontSize: 12, whiteSpace: "nowrap" }}>{s.id}</td>
+                          <td style={{ padding: 14, fontWeight: 700, whiteSpace: "nowrap" }}>{s.name}</td>
+                          <td style={{ padding: 14, fontSize: 13, whiteSpace: "nowrap" }}>{s.grade}</td>
+                          <td style={{ padding: 14, fontSize: 13 }}>{s.classroom}</td>
+                          <td style={{ padding: 14, fontSize: 12, whiteSpace: "nowrap" }}>{s.parentPhone}</td>
                           <td style={{ padding: 14 }}><Badge type={status} /></td>
                           <td style={{ padding: 14 }}>
-                            <button onClick={function() { setShowQR(s); }} style={{ background: "#e8f0fa", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer" }}>QR 보기</button>
+                            <button onClick={function() { setShowQR(s); }} style={{ background: "#e8f0fa", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", whiteSpace: "nowrap" }}>QR 보기</button>
                           </td>
-                          <td style={{ padding: 14 }}>
+                          <td style={{ padding: 14, whiteSpace: "nowrap" }}>
                             {(!att || !att.checkin) ? (
                               <button onClick={function() { handleScan(s, "입실"); }} style={{ background: "#e8f5e9", color: "#2e7d32", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer" }}>입실</button>
                             ) : null}
@@ -451,15 +624,19 @@ export default function App() {
                     })}
                   </tbody>
                 </table>
+                {filtered.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: 40, color: "#aabcd4" }}>등록된 수강생이 없습니다.</div>
+                ) : null}
               </div>
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
                 {CLASSES.map(function(cls) {
                   const classStudents = students.filter(function(s) { return s.classroom === cls; });
+                  if (classStudents.length === 0) return null;
                   const checkins = classStudents.filter(function(s) { return attendance[s.id] && attendance[s.id].checkin; }).length;
                   return (
                     <div key={cls} style={{ background: "#fff", borderRadius: 16, padding: 20 }}>
-                      <div style={{ fontWeight: 800, marginBottom: 12 }}>{cls} ({classStudents.length}명, 입실 {checkins}명)</div>
+                      <div style={{ fontWeight: 800, marginBottom: 12, fontSize: 14 }}>{cls} ({classStudents.length}명, 입실 {checkins}명)</div>
                       {classStudents.map(function(s) {
                         const att = attendance[s.id];
                         let status = "미확인";
@@ -488,6 +665,7 @@ export default function App() {
       {showQR ? <QRModal student={showQR} onClose={function() { setShowQR(null); }} /> : null}
       {showScanner ? <QRScanner students={students} attendance={attendance} onScan={handleScan} onClose={function() { setShowScanner(false); }} /> : null}
       {showRegForm ? <RegistrationForm onAdd={addStudent} onClose={function() { setShowRegForm(false); }} /> : null}
+      {showExcelUpload ? <ExcelUploadModal onAddMany={addManyStudents} onClose={function() { setShowExcelUpload(false); }} /> : null}
     </div>
   );
 }
