@@ -197,17 +197,3 @@ function RegistrationForm(props) {
     </div>
   );
 }
-
-function ParentView(props) {
-  const students = props.students;
-  const attendance = props.attendance;
-  const onBack = props.onBack;
-  const [phone, setPhone] = useState("");
-  const [found, setFound] = useState(null);
-  const [searched, setSearched] = useState(false);
-
-  function search() {
-    const clean = phone.replace(/-/g, "");
-    const s = students.find(function(st) { return st.parentPhone.replace(/-/g, "") === clean; });
-    setFound(s || null);
-    setSearched(t
