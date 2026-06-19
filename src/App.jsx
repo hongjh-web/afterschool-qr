@@ -344,7 +344,7 @@ export default function App() {
       <div style={{ background: "#0d1f3c", padding: "0 24px" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64 }}>
           <div>
-            <div style={{ color: "#fff", fontWeight: 800, fontSize: 16 }}>방과후학교 출결관리</div>
+            <div style={{ color: "#fff", fontWeight: 800, fontSize: 16 }}>예원초 온동네 돌봄·교육센터 출결관리시스템</div>
             <div style={{ color: "#7ab3d4", fontSize: 11 }}>{fmtDate()}</div>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
