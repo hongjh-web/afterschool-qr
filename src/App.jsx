@@ -197,3 +197,297 @@ function RegistrationForm(props) {
     </div>
   );
 }
+
+function ParentView(props) {
+  const students = props.students;
+  const attendance = props.attendance;
+  const onBack = props.onBack;
+  const [phone, setPhone] = useState("");
+  const [found, setFound] = useState(null);
+  const [searched, setSearched] = useState(false);
+
+  function search() {
+    const clean = phone.replace(/-/g, "");
+    const s = students.find(function(st) { return st.parentPhone.replace(/-/g, "") === clean; });
+    setFound(s || null);
+    setSearched(true);
+  }
+
+  const att = found ? attendance[found.id] : null;
+  let status = "미확인";
+  if (att && att.checkout) { status = "퇴실"; }
+  else if (att && att.checkin) { status = "입실"; }
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#e8f4fd", padding: 40 }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "#1a3a5c", cursor: "pointer", marginBottom: 20, fontWeight: 700 }}>← 돌아가기</button>
+      <div style={{ background: "#fff", borderRadius: 24, padding: 36, maxWidth: 420, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 24, fontSize: 20, fontWeight: 800 }}>학부모 출결 조회</div>
+        <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+          <input
+            value={phone}
+            onChange={function(e) { setPhone(e.target.value); }}
+            placeholder="보호자 연락처"
+            style={{ flex: 1, border: "1.5px solid #d0dce8", borderRadius: 10, padding: 12 }}
+          />
+          <button onClick={search} style={{ background: "#1a3a5c", color: "#fff", border: "none", borderRadius: 10, padding: "12px 20px", cursor: "pointer" }}>조회</button>
+        </div>
+        {searched && !found ? (
+          <div style={{ textAlign: "center", color: "#c62828", padding: 20, background: "#fce4ec", borderRadius: 12 }}>등록된 연락처를 찾을 수 없습니다.</div>
+        ) : null}
+        {found ? (
+          <div style={{ background: "#f0f7ff", borderRadius: 16, padding: 24 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 800 }}>{found.name}</div>
+                <div style={{ fontSize: 13, color: "#5a7a9a" }}>{found.grade} - {found.classroom}</div>
+              </div>
+              <Badge type={status} />
+            </div>
+            <div style={{ display: "flex", gap: 12 }}>
+              <div style={{ flex: 1, textAlign: "center", background: "#fff", borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 11, color: "#7a9abf" }}>입실 시간</div>
+                <div style={{ fontSize: 18, fontWeight: 800 }}>{(att && att.checkin) ? att.checkin : "-"}</div>
+              </div>
+              <div style={{ flex: 1, textAlign: "center", background: "#fff", borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 11, color: "#7a9abf" }}>퇴실 시간</div>
+                <div style={{ fontSize: 18, fontWeight: 800 }}>{(att && att.checkout) ? att.checkout : "-"}</div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const [view, setView] = useState("admin");
+  const [students, setStudents] = useState([]);
+  const [attendance, setAttendance] = useState({});
+  const [showQR, setShowQR] = useState(null);
+  const [showScanner, setShowScanner] = useState(false);
+  const [showRegForm, setShowRegForm] = useState(false);
+  const [filterClass, setFilterClass] = useState("전체");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [notification, setNotification] = useState(null);
+  const [activeTab, setActiveTab] = useState("students");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(function() {
+    const unsubStudents = onSnapshot(collection(db, "students"), function(snap) {
+      const list = snap.docs.map(function(d) {
+        return Object.assign({}, d.data(), { docId: d.id });
+      });
+      setStudents(list);
+      setLoading(false);
+    });
+
+    const unsubAtt = onSnapshot(collection(db, "attendance_" + todayKey()), function(snap) {
+      const att = {};
+      snap.docs.forEach(function(d) { att[d.id] = d.data(); });
+      setAttendance(att);
+    });
+
+    return function() {
+      unsubStudents();
+      unsubAtt();
+    };
+  }, []);
+
+  function notify(msg) {
+    setNotification({ msg: msg });
+    setTimeout(function() { setNotification(null); }, 3000);
+  }
+
+  function handleScan(student, type) {
+    const ref = doc(db, "attendance_" + todayKey(), student.id);
+    const att = attendance[student.id] || {};
+    if (type === "입실") {
+      setDoc(ref, Object.assign({}, att, { checkin: nowTime(), studentName: student.name, classroom: student.classroom }), { merge: true });
+    }
+    if (type === "퇴실") {
+      setDoc(ref, Object.assign({}, att, { checkout: nowTime() }), { merge: true });
+    }
+    notify(student.name + " 학생 " + type + " 처리 완료 (" + nowTime() + ")");
+  }
+
+  function addStudent(data) {
+    return addDoc(collection(db, "students"), data).then(function() {
+      notify(data.name + " 학생이 등록되었습니다.");
+    });
+  }
+
+  const allClasses = ["전체"].concat(CLASSES);
+
+  const filtered = students.filter(function(s) {
+    const classMatch = filterClass === "전체" || s.classroom === filterClass;
+    const q = searchQuery;
+    const searchMatch = !q || (s.name && s.name.indexOf(q) >= 0) || (s.id && s.id.indexOf(q) >= 0) || (s.grade && s.grade.indexOf(q) >= 0);
+    return classMatch && searchMatch;
+  });
+
+  const attValues = Object.values(attendance);
+  const stats = {
+    total: students.length,
+    checkin: attValues.filter(function(a) { return a.checkin && !a.checkout; }).length,
+    checkout: attValues.filter(function(a) { return a.checkout; }).length,
+    absent: students.length - attValues.filter(function(a) { return a.checkin; }).length
+  };
+
+  if (view === "parent") {
+    return <ParentView students={students} attendance={attendance} onBack={function() { setView("admin"); }} />;
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#f0f5fb", fontFamily: "sans-serif" }}>
+      <div style={{ background: "#0d1f3c", padding: "0 24px" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64 }}>
+          <div>
+            <div style={{ color: "#fff", fontWeight: 800, fontSize: 16 }}>방과후학교 출결관리</div>
+            <div style={{ color: "#7ab3d4", fontSize: 11 }}>{fmtDate()}</div>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={function() { setView("parent"); }} style={{ background: "rgba(255,255,255,0.1)", color: "#a0c8e8", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, padding: "8px 16px", cursor: "pointer" }}>학부모 조회</button>
+            <button onClick={function() { setShowScanner(true); }} style={{ background: "#4fc3f7", color: "#0d1f3c", border: "none", borderRadius: 10, padding: "8px 18px", fontWeight: 800, cursor: "pointer" }}>QR 스캔</button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
+        {loading ? (
+          <div style={{ textAlign: "center", padding: 80, color: "#7a9abf" }}>Firebase 데이터 불러오는 중...</div>
+        ) : (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 24 }}>
+              <div style={{ background: "#e8f0fa", borderRadius: 16, padding: 18 }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: "#1a3a5c" }}>{stats.total}</div>
+                <div style={{ fontSize: 12, color: "#5a7a9a" }}>전체 수강생</div>
+              </div>
+              <div style={{ background: "#e8f5e9", borderRadius: 16, padding: 18 }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: "#2e7d32" }}>{stats.checkin}</div>
+                <div style={{ fontSize: 12, color: "#5a7a9a" }}>수업 중</div>
+              </div>
+              <div style={{ background: "#e3f2fd", borderRadius: 16, padding: 18 }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: "#1565c0" }}>{stats.checkout}</div>
+                <div style={{ fontSize: 12, color: "#5a7a9a" }}>하교 완료</div>
+              </div>
+              <div style={{ background: "#fce4ec", borderRadius: 16, padding: 18 }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: "#b71c1c" }}>{stats.absent}</div>
+                <div style={{ fontSize: 12, color: "#5a7a9a" }}>미확인</div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 4, marginBottom: 20, background: "#e0eaf5", borderRadius: 12, padding: 4 }}>
+              <button onClick={function() { setActiveTab("students"); }} style={{ flex: 1, padding: 10, borderRadius: 9, border: "none", fontWeight: 700, cursor: "pointer", background: activeTab === "students" ? "#fff" : "transparent" }}>수강생 명단</button>
+              <button onClick={function() { setActiveTab("attendance"); }} style={{ flex: 1, padding: 10, borderRadius: 9, border: "none", fontWeight: 700, cursor: "pointer", background: activeTab === "attendance" ? "#fff" : "transparent" }}>출결 현황</button>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+              <input
+                value={searchQuery}
+                onChange={function(e) { setSearchQuery(e.target.value); }}
+                placeholder="이름, 학번, 학년반 검색..."
+                style={{ flex: 1, minWidth: 200, border: "1.5px solid #d0dce8", borderRadius: 10, padding: 10 }}
+              />
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {allClasses.map(function(c) {
+                  return (
+                    <button
+                      key={c}
+                      onClick={function() { setFilterClass(c); }}
+                      style={{ padding: "10px 14px", borderRadius: 10, border: "none", cursor: "pointer", background: filterClass === c ? "#1a3a5c" : "#fff", color: filterClass === c ? "#fff" : "#5a7a9a" }}
+                    >
+                      {c}
+                    </button>
+                  );
+                })}
+              </div>
+              <button onClick={function() { setShowRegForm(true); }} style={{ background: "#1a3a5c", color: "#fff", border: "none", borderRadius: 10, padding: "10px 20px", cursor: "pointer" }}>+ 수강생 등록</button>
+            </div>
+
+            {activeTab === "students" ? (
+              <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ background: "#f0f5fb" }}>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12 }}>고유번호</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12 }}>이름</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12 }}>학년반</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12 }}>과목</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12 }}>연락처</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12 }}>출결</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12 }}>QR</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12 }}>처리</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map(function(s) {
+                      const att = attendance[s.id];
+                      let status = "미확인";
+                      if (att && att.checkout) { status = "퇴실"; }
+                      else if (att && att.checkin) { status = "입실"; }
+                      return (
+                        <tr key={s.id} style={{ borderBottom: "1px solid #f0f5fb" }}>
+                          <td style={{ padding: 14, fontFamily: "monospace", fontSize: 12 }}>{s.id}</td>
+                          <td style={{ padding: 14, fontWeight: 700 }}>{s.name}</td>
+                          <td style={{ padding: 14, fontSize: 13 }}>{s.grade}</td>
+                          <td style={{ padding: 14 }}>{s.classroom}</td>
+                          <td style={{ padding: 14, fontSize: 12 }}>{s.parentPhone}</td>
+                          <td style={{ padding: 14 }}><Badge type={status} /></td>
+                          <td style={{ padding: 14 }}>
+                            <button onClick={function() { setShowQR(s); }} style={{ background: "#e8f0fa", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer" }}>QR 보기</button>
+                          </td>
+                          <td style={{ padding: 14 }}>
+                            {(!att || !att.checkin) ? (
+                              <button onClick={function() { handleScan(s, "입실"); }} style={{ background: "#e8f5e9", color: "#2e7d32", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer" }}>입실</button>
+                            ) : null}
+                            {(att && att.checkin && !att.checkout) ? (
+                              <button onClick={function() { handleScan(s, "퇴실"); }} style={{ background: "#e3f2fd", color: "#1565c0", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer" }}>퇴실</button>
+                            ) : null}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+                {CLASSES.map(function(cls) {
+                  const classStudents = students.filter(function(s) { return s.classroom === cls; });
+                  const checkins = classStudents.filter(function(s) { return attendance[s.id] && attendance[s.id].checkin; }).length;
+                  return (
+                    <div key={cls} style={{ background: "#fff", borderRadius: 16, padding: 20 }}>
+                      <div style={{ fontWeight: 800, marginBottom: 12 }}>{cls} ({classStudents.length}명, 입실 {checkins}명)</div>
+                      {classStudents.map(function(s) {
+                        const att = attendance[s.id];
+                        let status = "미확인";
+                        if (att && att.checkout) { status = "퇴실"; }
+                        else if (att && att.checkin) { status = "입실"; }
+                        return (
+                          <div key={s.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #f0f5fb" }}>
+                            <span style={{ fontSize: 13 }}>{s.name}</span>
+                            <Badge type={status} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {notification ? (
+        <div style={{ position: "fixed", bottom: 24, right: 24, background: "#1b5e20", color: "#fff", borderRadius: 12, padding: "14px 20px", zIndex: 2000 }}>{notification.msg}</div>
+      ) : null}
+
+      {showQR ? <QRModal student={showQR} onClose={function() { setShowQR(null); }} /> : null}
+      {showScanner ? <QRScanner students={students} attendance={attendance} onScan={handleScan} onClose={function() { setShowScanner(false); }} /> : null}
+      {showRegForm ? <RegistrationForm onAdd={addStudent} onClose={function() { setShowRegForm(false); }} /> : null}
+    </div>
+  );
+}
