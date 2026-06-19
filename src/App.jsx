@@ -364,6 +364,50 @@ function ExcelUploadModal(props) {
   );
 }
 
+const ADMIN_PASSWORD = "yodkc123!";
+
+function AdminLogin(props) {
+  const onLogin = props.onLogin;
+  const onGoParent = props.onGoParent;
+  const [pw, setPw] = useState("");
+  const [error, setError] = useState(false);
+
+  function handleSubmit() {
+    if (pw === ADMIN_PASSWORD) {
+      sessionStorage.setItem("isAdmin", "true");
+      onLogin();
+    } else {
+      setError(true);
+    }
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #0d1f3c, #1a3a5c)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#fff", borderRadius: 24, padding: 40, maxWidth: 380, width: "100%", textAlign: "center" }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>🔒</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: "#0d1f3c", marginBottom: 4 }}>관리자 로그인</div>
+        <div style={{ fontSize: 13, color: "#7a9abf", marginBottom: 24 }}>예원초 온동네 돌봄•교육센터</div>
+        <input
+          type="password"
+          value={pw}
+          onChange={function(e) { setPw(e.target.value); setError(false); }}
+          onKeyDown={function(e) { if (e.key === "Enter") handleSubmit(); }}
+          placeholder="비밀번호 입력"
+          style={{ width: "100%", boxSizing: "border-box", border: error ? "1.5px solid #e53935" : "1.5px solid #d0dce8", borderRadius: 10, padding: 14, fontSize: 15, marginBottom: 12, textAlign: "center", outline: "none" }}
+          autoFocus
+        />
+        {error ? <div style={{ color: "#e53935", fontSize: 13, marginBottom: 12 }}>비밀번호가 올바르지 않습니다.</div> : null}
+        <button onClick={handleSubmit} style={{ width: "100%", background: "#1a3a5c", color: "#fff", border: "none", borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 700, cursor: "pointer", marginBottom: 16 }}>
+          로그인
+        </button>
+        <button onClick={onGoParent} style={{ background: "none", border: "none", color: "#7a9abf", fontSize: 13, cursor: "pointer", textDecoration: "underline" }}>
+          학부모이신가요? 출결 조회로 이동
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ParentView(props) {
   const students = props.students;
   const attendance = props.attendance;
@@ -429,6 +473,9 @@ function ParentView(props) {
 
 export default function App() {
   const [view, setView] = useState("admin");
+  const [isAuthed, setIsAuthed] = useState(function() {
+    return sessionStorage.getItem("isAdmin") === "true";
+  });
   const [students, setStudents] = useState([]);
   const [attendance, setAttendance] = useState({});
   const [showQR, setShowQR] = useState(null);
@@ -515,6 +562,15 @@ export default function App() {
     return <ParentView students={students} attendance={attendance} onBack={function() { setView("admin"); }} />;
   }
 
+  if (!isAuthed) {
+    return (
+      <AdminLogin
+        onLogin={function() { setIsAuthed(true); }}
+        onGoParent={function() { setView("parent"); }}
+      />
+    );
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: "#f0f5fb", fontFamily: "sans-serif" }}>
       <div style={{ background: "#0d1f3c", padding: "0 24px" }}>
@@ -526,6 +582,7 @@ export default function App() {
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={function() { setView("parent"); }} style={{ background: "rgba(255,255,255,0.1)", color: "#a0c8e8", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, padding: "8px 16px", cursor: "pointer" }}>학부모 조회</button>
             <button onClick={function() { setShowScanner(true); }} style={{ background: "#4fc3f7", color: "#0d1f3c", border: "none", borderRadius: 10, padding: "8px 18px", fontWeight: 800, cursor: "pointer" }}>QR 스캔</button>
+            <button onClick={function() { sessionStorage.removeItem("isAdmin"); setIsAuthed(false); }} style={{ background: "rgba(255,255,255,0.1)", color: "#f5a0a0", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, padding: "8px 16px", cursor: "pointer" }}>로그아웃</button>
           </div>
         </div>
       </div>
