@@ -655,7 +655,8 @@ export default function App() {
   }
 
   function deleteStudent(student) {
-    return deleteDoc(doc(db, "students", student.docId)).then(function() {
+    const deleteAtt = deleteDoc(doc(db, "attendance_" + todayKey(), student.id)).catch(function() {});
+    return Promise.all([deleteDoc(doc(db, "students", student.docId)), deleteAtt]).then(function() {
       notify(student.name + " 학생이 삭제되었습니다.");
     });
   }
