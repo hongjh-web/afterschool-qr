@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, onSnapshot, setDoc, doc, updateDoc } from "firebase/firestore";
+import { getFirestore, collection, addDoc, onSnapshot, setDoc, doc, updateDoc, deleteDoc } from "firebase/firestore";
 import * as XLSX from "xlsx";
 
 const firebaseConfig = {
@@ -654,6 +654,28 @@ export default function App() {
     });
   }
 
+  function deleteStudent(student) {
+    return deleteDoc(doc(db, "students", student.docId)).then(function() {
+      notify(student.name + " 학생이 삭제되었습니다.");
+    });
+  }
+
+  function undoCheckout(student) {
+    const ref = doc(db, "attendance_" + todayKey(), student.id);
+    const att = attendance[student.id] || {};
+    const updated = Object.assign({}, att);
+    delete updated.checkout;
+    return setDoc(ref, updated).then(function() {
+      notify(student.name + " 학생 퇴실이 취소되었습니다.");
+    });
+  }
+
+  function undoCheckin(student) {
+    return deleteDoc(doc(db, "attendance_" + todayKey(), student.id)).then(function() {
+      notify(student.name + " 학생 입실이 취소되었습니다.");
+    });
+  }
+
   const allClasses = ["전체"].concat(CLASSES);
 
   const filtered = students.filter(function(s) {
@@ -784,12 +806,19 @@ export default function App() {
                             <button onClick={function() { setShowQR(s); }} style={{ background: "#e8f0fa", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", whiteSpace: "nowrap" }}>QR 보기</button>
                           </td>
                           <td style={{ padding: 14, whiteSpace: "nowrap" }}>
-                            <button onClick={function() { setEditingStudent(s); }} style={{ background: "#fff3e0", color: "#e65100", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginRight: 5 }}>수정</button>
+                            <button onClick={function() { setEditingStudent(s); }} style={{ background: "#fff3e0", color: "#e65100", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginRight: 5, marginBottom: 4 }}>수정</button>
+                            <button onClick={function() { if (window.confirm(s.name + " 학생을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) { deleteStudent(s); } }} style={{ background: "#fce4ec", color: "#c62828", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginRight: 5, marginBottom: 4 }}>삭제</button>
                             {(!att || !att.checkin) ? (
-                              <button onClick={function() { handleScan(s, "입실"); }} style={{ background: "#e8f5e9", color: "#2e7d32", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer" }}>입실</button>
+                              <button onClick={function() { handleScan(s, "입실"); }} style={{ background: "#e8f5e9", color: "#2e7d32", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginBottom: 4 }}>입실</button>
                             ) : null}
                             {(att && att.checkin && !att.checkout) ? (
-                              <button onClick={function() { handleScan(s, "퇴실"); }} style={{ background: "#e3f2fd", color: "#1565c0", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer" }}>퇴실</button>
+                              <span>
+                                <button onClick={function() { handleScan(s, "퇴실"); }} style={{ background: "#e3f2fd", color: "#1565c0", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginRight: 5, marginBottom: 4 }}>퇴실</button>
+                                <button onClick={function() { undoCheckin(s); }} style={{ background: "#f5f5f5", color: "#757575", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginBottom: 4 }}>입실취소</button>
+                              </span>
+                            ) : null}
+                            {(att && att.checkout) ? (
+                              <button onClick={function() { undoCheckout(s); }} style={{ background: "#f5f5f5", color: "#757575", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginBottom: 4 }}>퇴실취소</button>
                             ) : null}
                           </td>
                         </tr>
