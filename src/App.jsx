@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, onSnapshot, setDoc, doc } from "firebase/firestore";
+import { getFirestore, collection, addDoc, onSnapshot, setDoc, doc, updateDoc } from "firebase/firestore";
 import * as XLSX from "xlsx";
 
 const firebaseConfig = {
@@ -235,6 +235,95 @@ function RegistrationForm(props) {
 }
 
 // ── 엑셀 일괄 업로드 모달 ───────────────────────────────────────────────────
+function EditStudentModal(props) {
+  const student = props.student;
+  const onSave = props.onSave;
+  const onClose = props.onClose;
+  const [form, setForm] = useState({
+    name: student.name || "",
+    school: student.school || "",
+    gradeNum: (student.grade || "1학년").replace("학년", "") || "1",
+    classroom: student.classroom || CLASSES[0],
+    parentPhone: student.parentPhone || "",
+    parentEmail: student.parentEmail || ""
+  });
+  const [loading, setLoading] = useState(false);
+
+  function setField(key) {
+    return function(e) {
+      const v = e.target.value;
+      setForm(function(f) {
+        const copy = Object.assign({}, f);
+        copy[key] = v;
+        return copy;
+      });
+    };
+  }
+
+  function handleSave() {
+    if (!form.name || !form.school || !form.parentPhone) { alert("필수 항목을 입력해 주세요."); return; }
+    setLoading(true);
+    const data = {
+      name: form.name,
+      school: form.school,
+      grade: form.gradeNum + "학년",
+      classroom: form.classroom,
+      parentPhone: form.parentPhone,
+      parentEmail: form.parentEmail
+    };
+    onSave(student.docId, data).then(function() {
+      setLoading(false);
+      onClose();
+    });
+  }
+
+  const inputStyle = { width: "100%", boxSizing: "border-box", border: "1px solid #d0dce8", borderRadius: 10, padding: "10px 14px", fontSize: 14 };
+  const labelStyle = { fontSize: 12, fontWeight: 700, color: "#5a7a9a", display: "block", marginBottom: 5 };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(10,20,40,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+      <div style={{ background: "#fff", borderRadius: 20, padding: 36, maxWidth: 400, width: "92%" }}>
+        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>수강생 정보 수정</div>
+        <div style={{ fontSize: 12, color: "#aabcd4", fontFamily: "monospace", marginBottom: 20 }}>{student.id}</div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>이름 *</label>
+          <input style={inputStyle} value={form.name} onChange={setField("name")} placeholder="예: 김민준" />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>학교명 *</label>
+          <input style={inputStyle} value={form.school} onChange={setField("school")} placeholder="예: 예원초등학교" />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>학년 *</label>
+          <select style={inputStyle} value={form.gradeNum} onChange={setField("gradeNum")}>
+            {["1","2","3","4","5","6"].map(function(g) { return <option key={g} value={g}>{g}학년</option>; })}
+          </select>
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>보호자 연락처 *</label>
+          <input style={inputStyle} value={form.parentPhone} onChange={setField("parentPhone")} placeholder="010-0000-0000" />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>보호자 이메일</label>
+          <input style={inputStyle} value={form.parentEmail} onChange={setField("parentEmail")} placeholder="parent@email.com" />
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <label style={labelStyle}>프로그램명 *</label>
+          <select style={inputStyle} value={form.classroom} onChange={setField("classroom")}>
+            {CLASSES.map(function(c) { return <option key={c} value={c}>{c}</option>; })}
+          </select>
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, background: "#f0f5fb", color: "#5a7a9a", border: "none", borderRadius: 10, padding: 12, cursor: "pointer" }}>취소</button>
+          <button onClick={handleSave} disabled={loading} style={{ flex: 2, background: "#1a3a5c", color: "#fff", border: "none", borderRadius: 10, padding: 12, cursor: "pointer" }}>
+            {loading ? "저장 중..." : "저장하기"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ExcelUploadModal(props) {
   const onAddMany = props.onAddMany;
   const onClose = props.onClose;
@@ -499,6 +588,7 @@ export default function App() {
   const [showScanner, setShowScanner] = useState(false);
   const [showRegForm, setShowRegForm] = useState(false);
   const [showExcelUpload, setShowExcelUpload] = useState(false);
+  const [editingStudent, setEditingStudent] = useState(null);
   const [filterClass, setFilterClass] = useState("전체");
   const [searchQuery, setSearchQuery] = useState("");
   const [notification, setNotification] = useState(null);
@@ -555,6 +645,12 @@ export default function App() {
     });
     return Promise.all(promises).then(function() {
       notify(list.length + "명의 학생이 일괄 등록되었습니다.");
+    });
+  }
+
+  function updateStudent(docId, data) {
+    return updateDoc(doc(db, "students", docId), data).then(function() {
+      notify(data.name + " 학생 정보가 수정되었습니다.");
     });
   }
 
@@ -688,6 +784,7 @@ export default function App() {
                             <button onClick={function() { setShowQR(s); }} style={{ background: "#e8f0fa", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", whiteSpace: "nowrap" }}>QR 보기</button>
                           </td>
                           <td style={{ padding: 14, whiteSpace: "nowrap" }}>
+                            <button onClick={function() { setEditingStudent(s); }} style={{ background: "#fff3e0", color: "#e65100", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginRight: 5 }}>수정</button>
                             {(!att || !att.checkin) ? (
                               <button onClick={function() { handleScan(s, "입실"); }} style={{ background: "#e8f5e9", color: "#2e7d32", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer" }}>입실</button>
                             ) : null}
@@ -742,6 +839,7 @@ export default function App() {
       {showScanner ? <QRScanner students={students} attendance={attendance} onScan={handleScan} onClose={function() { setShowScanner(false); }} /> : null}
       {showRegForm ? <RegistrationForm onAdd={addStudent} onClose={function() { setShowRegForm(false); }} /> : null}
       {showExcelUpload ? <ExcelUploadModal onAddMany={addManyStudents} onClose={function() { setShowExcelUpload(false); }} /> : null}
+      {editingStudent ? <EditStudentModal student={editingStudent} onSave={updateStudent} onClose={function() { setEditingStudent(null); }} /> : null}
     </div>
   );
 }
