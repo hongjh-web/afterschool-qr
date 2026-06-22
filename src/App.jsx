@@ -83,7 +83,7 @@ function QRModal(props) {
     <div style={{ position: "fixed", inset: 0, background: "rgba(10,20,40,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
       <div style={{ background: "#fff", borderRadius: 20, padding: 36, maxWidth: 320, width: "90%", textAlign: "center" }} onClick={function(e) { e.stopPropagation(); }}>
         <div style={{ fontSize: 20, fontWeight: 800, color: "#0d1f3c" }}>{student.name}</div>
-        <div style={{ fontSize: 13, color: "#5a7a9a", marginBottom: 16 }}>{student.grade} - {student.classroom}</div>
+        <div style={{ fontSize: 13, color: "#5a7a9a", marginBottom: 16 }}>{student.school} {student.grade} - {student.classroom}</div>
         <img src={generateQRUrl(qrData, 200)} alt="QR" width={200} height={200} />
         <div style={{ fontFamily: "monospace", fontSize: 13, color: "#3a5a7a", marginTop: 12, marginBottom: 16 }}>{student.id}</div>
         <button onClick={onClose} style={{ background: "#1a3a5c", color: "#fff", border: "none", borderRadius: 10, padding: "10px 32px", cursor: "pointer" }}>닫기</button>
@@ -155,7 +155,7 @@ function QRScanner(props) {
 function RegistrationForm(props) {
   const onAdd = props.onAdd;
   const onClose = props.onClose;
-  const [form, setForm] = useState({ name: "", grade: "", classroom: CLASSES[0], parentPhone: "", parentEmail: "" });
+  const [form, setForm] = useState({ name: "", school: "", gradeNum: "1", classroom: CLASSES[0], parentPhone: "", parentEmail: "" });
   const [loading, setLoading] = useState(false);
 
   function setField(key) {
@@ -170,10 +170,18 @@ function RegistrationForm(props) {
   }
 
   function handleSubmit() {
-    if (!form.name || !form.grade || !form.parentPhone) { alert("필수 항목을 입력해 주세요."); return; }
+    if (!form.name || !form.school || !form.parentPhone) { alert("필수 항목을 입력해 주세요."); return; }
     setLoading(true);
     const id = generateId();
-    const data = Object.assign({}, form, { id: id });
+    const data = {
+      name: form.name,
+      school: form.school,
+      grade: form.gradeNum + "학년",
+      classroom: form.classroom,
+      parentPhone: form.parentPhone,
+      parentEmail: form.parentEmail,
+      id: id
+    };
     onAdd(data).then(function() {
       setLoading(false);
       onClose();
@@ -192,8 +200,14 @@ function RegistrationForm(props) {
           <input style={inputStyle} value={form.name} onChange={setField("name")} placeholder="예: 김민준" />
         </div>
         <div style={{ marginBottom: 14 }}>
-          <label style={labelStyle}>학년반 *</label>
-          <input style={inputStyle} value={form.grade} onChange={setField("grade")} placeholder="예: 3학년 1반" />
+          <label style={labelStyle}>학교명 *</label>
+          <input style={inputStyle} value={form.school} onChange={setField("school")} placeholder="예: 예원초등학교" />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>학년 *</label>
+          <select style={inputStyle} value={form.gradeNum} onChange={setField("gradeNum")}>
+            {["1","2","3","4","5","6"].map(function(g) { return <option key={g} value={g}>{g}학년</option>; })}
+          </select>
         </div>
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>보호자 연락처 *</label>
@@ -204,7 +218,7 @@ function RegistrationForm(props) {
           <input style={inputStyle} value={form.parentEmail} onChange={setField("parentEmail")} placeholder="parent@email.com" />
         </div>
         <div style={{ marginBottom: 20 }}>
-          <label style={labelStyle}>수강 과목 *</label>
+          <label style={labelStyle}>프로그램명 *</label>
           <select style={inputStyle} value={form.classroom} onChange={setField("classroom")}>
             {CLASSES.map(function(c) { return <option key={c} value={c}>{c}</option>; })}
           </select>
@@ -233,11 +247,11 @@ function ExcelUploadModal(props) {
 
   function downloadTemplate() {
     const sample = [
-      { 이름: "김민준", 학년반: "3학년 1반", 수강과목: CLASSES[0], 보호자연락처: "010-1234-5678", 보호자이메일: "parent@email.com" },
-      { 이름: "이서연", 학년반: "3학년 2반", 수강과목: CLASSES[1], 보호자연락처: "010-2345-6789", 보호자이메일: "" }
+      { 이름: "김민준", 학교명: "예원초등학교", 학년: "3", 프로그램명: CLASSES[0], 보호자연락처: "010-1234-5678", 보호자이메일: "parent@email.com" },
+      { 이름: "이서연", 학교명: "예원초등학교", 학년: "3", 프로그램명: CLASSES[1], 보호자연락처: "010-2345-6789", 보호자이메일: "" }
     ];
     const ws = XLSX.utils.json_to_sheet(sample);
-    ws["!cols"] = [{ wch: 10 }, { wch: 12 }, { wch: 30 }, { wch: 16 }, { wch: 22 }];
+    ws["!cols"] = [{ wch: 10 }, { wch: 16 }, { wch: 8 }, { wch: 30 }, { wch: 16 }, { wch: 22 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "수강생목록");
     XLSX.writeFile(wb, "수강생_등록_양식.xlsx");
@@ -259,23 +273,26 @@ function ExcelUploadModal(props) {
       const errs = [];
       json.forEach(function(row, idx) {
         const name = String(row["이름"] || "").trim();
-        const grade = String(row["학년반"] || "").trim();
-        const classroom = String(row["수강과목"] || "").trim();
+        const school = String(row["학교명"] || "").trim();
+        const gradeRaw = String(row["학년"] || "").trim();
+        const grade = gradeRaw ? (gradeRaw.replace("학년", "") + "학년") : "";
+        const classroom = String(row["프로그램명"] || "").trim();
         const parentPhone = String(row["보호자연락처"] || "").trim();
         const parentEmail = String(row["보호자이메일"] || "").trim();
         const lineNum = idx + 2;
 
-        if (!name || !grade || !parentPhone) {
-          errs.push("줄 " + lineNum + ": 이름/학년반/보호자연락처는 필수입니다.");
+        if (!name || !school || !parentPhone) {
+          errs.push("줄 " + lineNum + ": 이름/학교명/보호자연락처는 필수입니다.");
           return;
         }
         if (classroom && CLASSES.indexOf(classroom) === -1) {
-          errs.push("줄 " + lineNum + ": '" + classroom + "' 은 등록된 과목명이 아닙니다.");
+          errs.push("줄 " + lineNum + ": '" + classroom + "' 은 등록된 프로그램명이 아닙니다.");
           return;
         }
         parsed.push({
           name: name,
-          grade: grade,
+          school: school,
+          grade: grade || "1학년",
           classroom: classroom || CLASSES[0],
           parentPhone: parentPhone,
           parentEmail: parentEmail,
@@ -302,7 +319,7 @@ function ExcelUploadModal(props) {
       <div style={{ background: "#fff", borderRadius: 20, padding: 36, maxWidth: 520, width: "92%", maxHeight: "85vh", overflowY: "auto" }}>
         <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>엑셀로 수강생 일괄 등록</div>
         <div style={{ fontSize: 13, color: "#5a7a9a", marginBottom: 20 }}>
-          이름, 학년반, 수강과목, 보호자연락처, 보호자이메일 열을 가진 엑셀 파일을 업로드하세요.
+          이름, 학교명, 학년, 프로그램명, 보호자연락처, 보호자이메일 열을 가진 엑셀 파일을 업로드하세요.
         </div>
 
         <button onClick={downloadTemplate} style={{ background: "#e8f0fa", color: "#1a3a5c", border: "none", borderRadius: 10, padding: "10px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 16 }}>
@@ -335,7 +352,7 @@ function ExcelUploadModal(props) {
                 return (
                   <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#2e7d32", padding: "3px 0" }}>
                     <span style={{ fontWeight: 700 }}>{r.name}</span>
-                    <span>{r.grade} · {r.classroom}</span>
+                    <span>{r.school} {r.grade} · {r.classroom}</span>
                   </div>
                 );
               })}
@@ -450,7 +467,7 @@ function ParentView(props) {
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
               <div>
                 <div style={{ fontSize: 20, fontWeight: 800 }}>{found.name}</div>
-                <div style={{ fontSize: 13, color: "#5a7a9a" }}>{found.grade} - {found.classroom}</div>
+                <div style={{ fontSize: 13, color: "#5a7a9a" }}>{found.school} {found.grade} - {found.classroom}</div>
               </div>
               <Badge type={status} />
             </div>
@@ -546,7 +563,7 @@ export default function App() {
   const filtered = students.filter(function(s) {
     const classMatch = filterClass === "전체" || s.classroom === filterClass;
     const q = searchQuery;
-    const searchMatch = !q || (s.name && s.name.indexOf(q) >= 0) || (s.id && s.id.indexOf(q) >= 0) || (s.grade && s.grade.indexOf(q) >= 0);
+    const searchMatch = !q || (s.name && s.name.indexOf(q) >= 0) || (s.id && s.id.indexOf(q) >= 0) || (s.grade && s.grade.indexOf(q) >= 0) || (s.school && s.school.indexOf(q) >= 0);
     return classMatch && searchMatch;
   });
 
@@ -643,8 +660,9 @@ export default function App() {
                     <tr style={{ background: "#f0f5fb" }}>
                       <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>고유번호</th>
                       <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>이름</th>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>학년반</th>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>과목</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>학교명</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>학년</th>
+                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>프로그램명</th>
                       <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>연락처</th>
                       <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>출결</th>
                       <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>QR</th>
@@ -661,6 +679,7 @@ export default function App() {
                         <tr key={s.id} style={{ borderBottom: "1px solid #f0f5fb" }}>
                           <td style={{ padding: 14, fontFamily: "monospace", fontSize: 12, whiteSpace: "nowrap" }}>{s.id}</td>
                           <td style={{ padding: 14, fontWeight: 700, whiteSpace: "nowrap" }}>{s.name}</td>
+                          <td style={{ padding: 14, fontSize: 13, whiteSpace: "nowrap" }}>{s.school}</td>
                           <td style={{ padding: 14, fontSize: 13, whiteSpace: "nowrap" }}>{s.grade}</td>
                           <td style={{ padding: 14, fontSize: 13 }}>{s.classroom}</td>
                           <td style={{ padding: 14, fontSize: 12, whiteSpace: "nowrap" }}>{s.parentPhone}</td>
