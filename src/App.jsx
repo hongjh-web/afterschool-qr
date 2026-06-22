@@ -235,6 +235,59 @@ function RegistrationForm(props) {
 }
 
 // ── 엑셀 일괄 업로드 모달 ───────────────────────────────────────────────────
+function UnlockModal(props) {
+  const date = props.date;
+  const lockInfo = props.lockInfo;
+  const onUnlock = props.onUnlock;
+  const onClose = props.onClose;
+  const [pw, setPw] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  function handleSubmit() {
+    setLoading(true);
+    setError("");
+    onUnlock(pw).then(function() {
+      setLoading(false);
+      onClose();
+    }).catch(function(e) {
+      setLoading(false);
+      setError(e.message || "잠금해제에 실패했습니다.");
+    });
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(10,20,40,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+      <div style={{ background: "#fff", borderRadius: 20, padding: 36, maxWidth: 360, width: "92%", textAlign: "center" }}>
+        <div style={{ fontSize: 32, marginBottom: 10 }}>🔐</div>
+        <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 6 }}>{date} 출결 확정됨</div>
+        <div style={{ fontSize: 12, color: "#8aaac8", marginBottom: 20 }}>
+          {lockInfo ? ("확정 시각: " + lockInfo.lockedAt) : ""}
+        </div>
+        <div style={{ fontSize: 13, color: "#5a7a9a", marginBottom: 16 }}>
+          이 날짜의 출결을 다시 수정하려면<br />최종관리자 비밀번호가 필요합니다.
+        </div>
+        <input
+          type="password"
+          value={pw}
+          onChange={function(e) { setPw(e.target.value); setError(""); }}
+          onKeyDown={function(e) { if (e.key === "Enter") handleSubmit(); }}
+          placeholder="최종관리자 비밀번호"
+          style={{ width: "100%", boxSizing: "border-box", border: error ? "1.5px solid #e53935" : "1px solid #d0dce8", borderRadius: 10, padding: 12, fontSize: 14, textAlign: "center", marginBottom: 10, outline: "none" }}
+          autoFocus
+        />
+        {error ? <div style={{ color: "#e53935", fontSize: 12, marginBottom: 12 }}>{error}</div> : null}
+        <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, background: "#f0f5fb", color: "#5a7a9a", border: "none", borderRadius: 10, padding: 12, cursor: "pointer" }}>닫기</button>
+          <button onClick={handleSubmit} disabled={loading} style={{ flex: 2, background: "#c62828", color: "#fff", border: "none", borderRadius: 10, padding: 12, cursor: "pointer", fontWeight: 700 }}>
+            {loading ? "확인 중..." : "잠금 해제"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EditStudentModal(props) {
   const student = props.student;
   const onSave = props.onSave;
@@ -471,6 +524,7 @@ function ExcelUploadModal(props) {
 }
 
 const ADMIN_PASSWORD = "yodkc123!";
+const SUPER_PASSWORD = "ywodc123!";
 
 function AdminLogin(props) {
   const onLogin = props.onLogin;
@@ -593,6 +647,10 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [notification, setNotification] = useState(null);
   const [activeTab, setActiveTab] = useState("students");
+  const [selectedDate, setSelectedDate] = useState(todayKey());
+  const [isLocked, setIsLocked] = useState(false);
+  const [lockInfo, setLockInfo] = useState(null);
+  const [showUnlockModal, setShowUnlockModal] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(function() {
@@ -604,17 +662,33 @@ export default function App() {
       setLoading(false);
     });
 
-    const unsubAtt = onSnapshot(collection(db, "attendance_" + todayKey()), function(snap) {
+    return function() {
+      unsubStudents();
+    };
+  }, []);
+
+  useEffect(function() {
+    const unsubAtt = onSnapshot(collection(db, "attendance_" + selectedDate), function(snap) {
       const att = {};
       snap.docs.forEach(function(d) { att[d.id] = d.data(); });
       setAttendance(att);
     });
 
+    const unsubLock = onSnapshot(doc(db, "daylocks", selectedDate), function(snap) {
+      if (snap.exists()) {
+        setIsLocked(true);
+        setLockInfo(snap.data());
+      } else {
+        setIsLocked(false);
+        setLockInfo(null);
+      }
+    });
+
     return function() {
-      unsubStudents();
       unsubAtt();
+      unsubLock();
     };
-  }, []);
+  }, [selectedDate]);
 
   function notify(msg) {
     setNotification({ msg: msg });
@@ -622,7 +696,8 @@ export default function App() {
   }
 
   function handleScan(student, type) {
-    const ref = doc(db, "attendance_" + todayKey(), student.id);
+    if (isLocked) { notify(selectedDate + " 출결은 확정되어 잠겨있습니다."); return; }
+    const ref = doc(db, "attendance_" + selectedDate, student.id);
     const att = attendance[student.id] || {};
     if (type === "입실") {
       setDoc(ref, Object.assign({}, att, { checkin: nowTime(), studentName: student.name, classroom: student.classroom }), { merge: true });
@@ -655,14 +730,15 @@ export default function App() {
   }
 
   function deleteStudent(student) {
-    const deleteAtt = deleteDoc(doc(db, "attendance_" + todayKey(), student.id)).catch(function() {});
+    const deleteAtt = deleteDoc(doc(db, "attendance_" + selectedDate, student.id)).catch(function() {});
     return Promise.all([deleteDoc(doc(db, "students", student.docId)), deleteAtt]).then(function() {
       notify(student.name + " 학생이 삭제되었습니다.");
     });
   }
 
   function undoCheckout(student) {
-    const ref = doc(db, "attendance_" + todayKey(), student.id);
+    if (isLocked) { notify(selectedDate + " 출결은 확정되어 잠겨있습니다."); return; }
+    const ref = doc(db, "attendance_" + selectedDate, student.id);
     const att = attendance[student.id] || {};
     const updated = Object.assign({}, att);
     delete updated.checkout;
@@ -672,8 +748,22 @@ export default function App() {
   }
 
   function undoCheckin(student) {
-    return deleteDoc(doc(db, "attendance_" + todayKey(), student.id)).then(function() {
+    if (isLocked) { notify(selectedDate + " 출결은 확정되어 잠겨있습니다."); return; }
+    return deleteDoc(doc(db, "attendance_" + selectedDate, student.id)).then(function() {
       notify(student.name + " 학생 입실이 취소되었습니다.");
+    });
+  }
+
+  function lockDay() {
+    return setDoc(doc(db, "daylocks", selectedDate), { lockedAt: nowTime(), date: selectedDate }).then(function() {
+      notify(selectedDate + " 출결이 확정되었습니다.");
+    });
+  }
+
+  function unlockDay(pw) {
+    if (pw !== SUPER_PASSWORD) { return Promise.reject(new Error("비밀번호가 올바르지 않습니다.")); }
+    return deleteDoc(doc(db, "daylocks", selectedDate)).then(function() {
+      notify(selectedDate + " 잠금이 해제되었습니다.");
     });
   }
 
@@ -752,6 +842,28 @@ export default function App() {
               <button onClick={function() { setActiveTab("attendance"); }} style={{ flex: 1, padding: 10, borderRadius: 9, border: "none", fontWeight: 700, cursor: "pointer", background: activeTab === "attendance" ? "#fff" : "transparent" }}>출결 현황</button>
             </div>
 
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, background: "#fff", borderRadius: 14, padding: "14px 18px", flexWrap: "wrap" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#5a7a9a" }}>📅 조회 날짜</div>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={function(e) { setSelectedDate(e.target.value); }}
+                style={{ border: "1.5px solid #d0dce8", borderRadius: 10, padding: "8px 12px", fontSize: 14 }}
+              />
+              <button onClick={function() { setSelectedDate(todayKey()); }} style={{ background: "#e8f0fa", color: "#1a3a5c", border: "none", borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>오늘</button>
+
+              <div style={{ flex: 1 }} />
+
+              {isLocked ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ background: "#fce4ec", color: "#c62828", borderRadius: 20, padding: "6px 14px", fontSize: 13, fontWeight: 700 }}>🔒 확정됨 (잠김)</span>
+                  <button onClick={function() { setShowUnlockModal(true); }} style={{ background: "#f5f5f5", color: "#757575", border: "none", borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>잠금해제</button>
+                </div>
+              ) : (
+                <button onClick={function() { if (window.confirm(selectedDate + " 출결을 확정하시겠습니까?\n확정 후에는 최종관리자 비밀번호 없이 수정할 수 없습니다.")) { lockDay(); } }} style={{ background: "#2e7d32", color: "#fff", border: "none", borderRadius: 9, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ 이 날짜 출결 확정하기</button>
+              )}
+            </div>
+
             <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
               <input
                 value={searchQuery}
@@ -809,18 +921,24 @@ export default function App() {
                           <td style={{ padding: 14, whiteSpace: "nowrap" }}>
                             <button onClick={function() { setEditingStudent(s); }} style={{ background: "#fff3e0", color: "#e65100", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginRight: 5, marginBottom: 4 }}>수정</button>
                             <button onClick={function() { if (window.confirm(s.name + " 학생을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) { deleteStudent(s); } }} style={{ background: "#fce4ec", color: "#c62828", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginRight: 5, marginBottom: 4 }}>삭제</button>
-                            {(!att || !att.checkin) ? (
-                              <button onClick={function() { handleScan(s, "입실"); }} style={{ background: "#e8f5e9", color: "#2e7d32", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginBottom: 4 }}>입실</button>
-                            ) : null}
-                            {(att && att.checkin && !att.checkout) ? (
+                            {isLocked ? (
+                              <span style={{ fontSize: 11, color: "#aabcd4" }}>🔒 잠김</span>
+                            ) : (
                               <span>
-                                <button onClick={function() { handleScan(s, "퇴실"); }} style={{ background: "#e3f2fd", color: "#1565c0", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginRight: 5, marginBottom: 4 }}>퇴실</button>
-                                <button onClick={function() { undoCheckin(s); }} style={{ background: "#f5f5f5", color: "#757575", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginBottom: 4 }}>입실취소</button>
+                                {(!att || !att.checkin) ? (
+                                  <button onClick={function() { handleScan(s, "입실"); }} style={{ background: "#e8f5e9", color: "#2e7d32", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginBottom: 4 }}>입실</button>
+                                ) : null}
+                                {(att && att.checkin && !att.checkout) ? (
+                                  <span>
+                                    <button onClick={function() { handleScan(s, "퇴실"); }} style={{ background: "#e3f2fd", color: "#1565c0", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginRight: 5, marginBottom: 4 }}>퇴실</button>
+                                    <button onClick={function() { undoCheckin(s); }} style={{ background: "#f5f5f5", color: "#757575", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginBottom: 4 }}>입실취소</button>
+                                  </span>
+                                ) : null}
+                                {(att && att.checkout) ? (
+                                  <button onClick={function() { undoCheckout(s); }} style={{ background: "#f5f5f5", color: "#757575", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginBottom: 4 }}>퇴실취소</button>
+                                ) : null}
                               </span>
-                            ) : null}
-                            {(att && att.checkout) ? (
-                              <button onClick={function() { undoCheckout(s); }} style={{ background: "#f5f5f5", color: "#757575", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginBottom: 4 }}>퇴실취소</button>
-                            ) : null}
+                            )}
                           </td>
                         </tr>
                       );
@@ -870,6 +988,7 @@ export default function App() {
       {showRegForm ? <RegistrationForm onAdd={addStudent} onClose={function() { setShowRegForm(false); }} /> : null}
       {showExcelUpload ? <ExcelUploadModal onAddMany={addManyStudents} onClose={function() { setShowExcelUpload(false); }} /> : null}
       {editingStudent ? <EditStudentModal student={editingStudent} onSave={updateStudent} onClose={function() { setEditingStudent(null); }} /> : null}
+      {showUnlockModal ? <UnlockModal date={selectedDate} lockInfo={lockInfo} onUnlock={unlockDay} onClose={function() { setShowUnlockModal(false); }} /> : null}
     </div>
   );
 }
