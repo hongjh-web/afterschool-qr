@@ -60,6 +60,13 @@ function todayKey() {
   return new Date().toISOString().split("T")[0];
 }
 
+function dateToWeekday(dateStr) {
+  const days = ["일", "월", "화", "수", "목", "금", "토"];
+  const parts = dateStr.split("-");
+  const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  return days[d.getDay()];
+}
+
 function Badge(props) {
   const type = props.type;
   const cfg = {
@@ -850,6 +857,7 @@ export default function App() {
                 onChange={function(e) { setSelectedDate(e.target.value); }}
                 style={{ border: "1.5px solid #d0dce8", borderRadius: 10, padding: "8px 12px", fontSize: 14 }}
               />
+              <span style={{ fontSize: 14, fontWeight: 700, color: "#1a3a5c" }}>({dateToWeekday(selectedDate)})</span>
               <button onClick={function() { setSelectedDate(todayKey()); }} style={{ background: "#e8f0fa", color: "#1a3a5c", border: "none", borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>오늘</button>
 
               <div style={{ flex: 1 }} />
