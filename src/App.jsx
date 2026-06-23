@@ -892,68 +892,80 @@ export default function App() {
             </div>
 
             {activeTab === "students" ? (
-              <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr style={{ background: "#f0f5fb" }}>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>고유번호</th>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>이름</th>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>학교명</th>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>학년</th>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>프로그램명</th>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>연락처</th>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>출결</th>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>QR</th>
-                      <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>처리</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map(function(s) {
-                      const att = attendance[s.id];
-                      let status = "미확인";
-                      if (att && att.checkout) { status = "퇴실"; }
-                      else if (att && att.checkin) { status = "입실"; }
-                      return (
-                        <tr key={s.id} style={{ borderBottom: "1px solid #f0f5fb" }}>
-                          <td style={{ padding: 14, fontFamily: "monospace", fontSize: 12, whiteSpace: "nowrap" }}>{s.id}</td>
-                          <td style={{ padding: 14, fontWeight: 700, whiteSpace: "nowrap" }}>{s.name}</td>
-                          <td style={{ padding: 14, fontSize: 13, whiteSpace: "nowrap" }}>{s.school}</td>
-                          <td style={{ padding: 14, fontSize: 13, whiteSpace: "nowrap" }}>{s.grade}</td>
-                          <td style={{ padding: 14, fontSize: 13 }}>{s.classroom}</td>
-                          <td style={{ padding: 14, fontSize: 12, whiteSpace: "nowrap" }}>{s.parentPhone}</td>
-                          <td style={{ padding: 14 }}><Badge type={status} /></td>
-                          <td style={{ padding: 14 }}>
-                            <button onClick={function() { setShowQR(s); }} style={{ background: "#e8f0fa", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", whiteSpace: "nowrap" }}>QR 보기</button>
-                          </td>
-                          <td style={{ padding: 14, whiteSpace: "nowrap" }}>
-                            <button onClick={function() { setEditingStudent(s); }} style={{ background: "#fff3e0", color: "#e65100", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginRight: 5, marginBottom: 4 }}>수정</button>
-                            <button onClick={function() { if (window.confirm(s.name + " 학생을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) { deleteStudent(s); } }} style={{ background: "#fce4ec", color: "#c62828", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginRight: 5, marginBottom: 4 }}>삭제</button>
-                            {isLocked ? (
-                              <span style={{ fontSize: 11, color: "#aabcd4" }}>🔒 잠김</span>
-                            ) : (
-                              <span>
-                                {(!att || !att.checkin) ? (
-                                  <button onClick={function() { handleScan(s, "입실"); }} style={{ background: "#e8f5e9", color: "#2e7d32", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginBottom: 4 }}>입실</button>
-                                ) : null}
-                                {(att && att.checkin && !att.checkout) ? (
-                                  <span>
-                                    <button onClick={function() { handleScan(s, "퇴실"); }} style={{ background: "#e3f2fd", color: "#1565c0", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginRight: 5, marginBottom: 4 }}>퇴실</button>
-                                    <button onClick={function() { undoCheckin(s); }} style={{ background: "#f5f5f5", color: "#757575", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginBottom: 4 }}>입실취소</button>
-                                  </span>
-                                ) : null}
-                                {(att && att.checkout) ? (
-                                  <button onClick={function() { undoCheckout(s); }} style={{ background: "#f5f5f5", color: "#757575", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginBottom: 4 }}>퇴실취소</button>
-                                ) : null}
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div>
+                {CLASSES.map(function(cls) {
+                  const classFiltered = filtered.filter(function(s) { return s.classroom === cls; });
+                  if (classFiltered.length === 0) return null;
+                  return (
+                    <div key={cls} style={{ marginBottom: 24 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: "#0d1f3c" }}>{cls}</div>
+                        <span style={{ background: "#e8f0fa", color: "#1a3a5c", borderRadius: 20, padding: "2px 10px", fontSize: 12, fontWeight: 700 }}>{classFiltered.length}명</span>
+                      </div>
+                      <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                          <thead>
+                            <tr style={{ background: "#f0f5fb" }}>
+                              <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>고유번호</th>
+                              <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>이름</th>
+                              <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>학교명</th>
+                              <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>학년</th>
+                              <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>연락처</th>
+                              <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>출결</th>
+                              <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>QR</th>
+                              <th style={{ padding: 14, textAlign: "left", fontSize: 12, whiteSpace: "nowrap" }}>처리</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {classFiltered.map(function(s) {
+                              const att = attendance[s.id];
+                              let status = "미확인";
+                              if (att && att.checkout) { status = "퇴실"; }
+                              else if (att && att.checkin) { status = "입실"; }
+                              return (
+                                <tr key={s.id} style={{ borderBottom: "1px solid #f0f5fb" }}>
+                                  <td style={{ padding: 14, fontFamily: "monospace", fontSize: 12, whiteSpace: "nowrap" }}>{s.id}</td>
+                                  <td style={{ padding: 14, fontWeight: 700, whiteSpace: "nowrap" }}>{s.name}</td>
+                                  <td style={{ padding: 14, fontSize: 13, whiteSpace: "nowrap" }}>{s.school}</td>
+                                  <td style={{ padding: 14, fontSize: 13, whiteSpace: "nowrap" }}>{s.grade}</td>
+                                  <td style={{ padding: 14, fontSize: 12, whiteSpace: "nowrap" }}>{s.parentPhone}</td>
+                                  <td style={{ padding: 14 }}><Badge type={status} /></td>
+                                  <td style={{ padding: 14 }}>
+                                    <button onClick={function() { setShowQR(s); }} style={{ background: "#e8f0fa", border: "none", borderRadius: 8, padding: "7px 12px", cursor: "pointer", whiteSpace: "nowrap" }}>QR 보기</button>
+                                  </td>
+                                  <td style={{ padding: 14, whiteSpace: "nowrap" }}>
+                                    <button onClick={function() { setEditingStudent(s); }} style={{ background: "#fff3e0", color: "#e65100", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginRight: 5, marginBottom: 4 }}>수정</button>
+                                    <button onClick={function() { if (window.confirm(s.name + " 학생을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) { deleteStudent(s); } }} style={{ background: "#fce4ec", color: "#c62828", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginRight: 5, marginBottom: 4 }}>삭제</button>
+                                    {isLocked ? (
+                                      <span style={{ fontSize: 11, color: "#aabcd4" }}>🔒 잠김</span>
+                                    ) : (
+                                      <span>
+                                        {(!att || !att.checkin) ? (
+                                          <button onClick={function() { handleScan(s, "입실"); }} style={{ background: "#e8f5e9", color: "#2e7d32", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginBottom: 4 }}>입실</button>
+                                        ) : null}
+                                        {(att && att.checkin && !att.checkout) ? (
+                                          <span>
+                                            <button onClick={function() { handleScan(s, "퇴실"); }} style={{ background: "#e3f2fd", color: "#1565c0", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginRight: 5, marginBottom: 4 }}>퇴실</button>
+                                            <button onClick={function() { undoCheckin(s); }} style={{ background: "#f5f5f5", color: "#757575", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginBottom: 4 }}>입실취소</button>
+                                          </span>
+                                        ) : null}
+                                        {(att && att.checkout) ? (
+                                          <button onClick={function() { undoCheckout(s); }} style={{ background: "#f5f5f5", color: "#757575", border: "none", borderRadius: 7, padding: "5px 10px", cursor: "pointer", marginBottom: 4 }}>퇴실취소</button>
+                                        ) : null}
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })}
                 {filtered.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: 40, color: "#aabcd4" }}>등록된 수강생이 없습니다.</div>
+                  <div style={{ textAlign: "center", padding: 40, color: "#aabcd4", background: "#fff", borderRadius: 16 }}>등록된 수강생이 없습니다.</div>
                 ) : null}
               </div>
             ) : (
