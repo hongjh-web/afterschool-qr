@@ -67,6 +67,17 @@ function dateToWeekday(dateStr) {
   return days[d.getDay()];
 }
 
+function loadJsQR() {
+  return new Promise(function(resolve, reject) {
+    if (window.jsQR) { resolve(window.jsQR); return; }
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js";
+    script.onload = function() { resolve(window.jsQR); };
+    script.onerror = function() { reject(new Error("jsQR 로드 실패")); };
+    document.head.appendChild(script);
+  });
+}
+
 function Badge(props) {
   const type = props.type;
   const cfg = {
@@ -575,6 +586,179 @@ function AdminLogin(props) {
   );
 }
 
+function KioskScanner() {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const lastScanRef = useRef({ id: "", time: 0 });
+  const rafRef = useRef(null);
+
+  const [students, setStudents] = useState([]);
+  const [attendance, setAttendance] = useState({});
+  const [isLocked, setIsLocked] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+  const [result, setResult] = useState(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(function() {
+    const unsubStudents = onSnapshot(collection(db, "students"), function(snap) {
+      const list = snap.docs.map(function(d) {
+        return Object.assign({}, d.data(), { docId: d.id });
+      });
+      setStudents(list);
+    });
+    const unsubAtt = onSnapshot(collection(db, "attendance_" + todayKey()), function(snap) {
+      const att = {};
+      snap.docs.forEach(function(d) { att[d.id] = d.data(); });
+      setAttendance(att);
+    });
+    const unsubLock = onSnapshot(doc(db, "daylocks", todayKey()), function(snap) {
+      setIsLocked(snap.exists());
+    });
+    return function() {
+      unsubStudents();
+      unsubAtt();
+      unsubLock();
+    };
+  }, []);
+
+  useEffect(function() {
+    let active = true;
+    loadJsQR().then(function() {
+      return navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    }).then(function(stream) {
+      if (!active) { stream.getTracks().forEach(function(t) { t.stop(); }); return; }
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+      setReady(true);
+      tick();
+    }).catch(function(err) {
+      setCameraError("카메라를 시작할 수 없습니다: " + err.message);
+    });
+
+    function tick() {
+      if (!active) return;
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      if (video && canvas && video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = window.jsQR ? window.jsQR(imageData.data, imageData.width, imageData.height) : null;
+        if (code && code.data) {
+          handleDetected(code.data);
+        }
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    }
+
+    return function() {
+      active = false;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (streamRef.current) streamRef.current.getTracks().forEach(function(t) { t.stop(); });
+    };
+  }, []);
+
+  function handleDetected(raw) {
+    let parsed = null;
+    try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+    const id = parsed && parsed.id ? parsed.id : raw;
+
+    const now = Date.now();
+    if (lastScanRef.current.id === id && (now - lastScanRef.current.time) < 4000) {
+      return;
+    }
+    lastScanRef.current = { id: id, time: now };
+
+    processCheckIn(id);
+  }
+
+  function processCheckIn(id) {
+    const student = students.find(function(s) { return s.id === id; });
+    if (!student) {
+      setResult({ error: true, msg: "등록되지 않은 QR입니다.", time: Date.now() });
+      return;
+    }
+    if (isLocked) {
+      setResult({ error: true, msg: "오늘 출결은 이미 확정되어 처리할 수 없습니다.", time: Date.now() });
+      return;
+    }
+    const att = attendance[student.id] || {};
+    if (att.checkin && att.checkout) {
+      setResult({ error: true, msg: student.name + " 학생은 이미 퇴실 처리되었습니다.", time: Date.now() });
+      return;
+    }
+    const type = att.checkin ? "퇴실" : "입실";
+    const ref = doc(db, "attendance_" + todayKey(), student.id);
+    const payload = type === "입실"
+      ? Object.assign({}, att, { checkin: nowTime(), studentName: student.name, classroom: student.classroom })
+      : Object.assign({}, att, { checkout: nowTime() });
+    setDoc(ref, payload, { merge: true });
+    setResult({ error: false, student: student, type: type, time: Date.now() });
+  }
+
+  useEffect(function() {
+    if (!result) return;
+    const t = setTimeout(function() { setResult(null); }, 2500);
+    return function() { clearTimeout(t); };
+  }, [result]);
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#0d1f3c", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ color: "#7ab3d4", fontSize: 14, marginBottom: 6 }}>{fmtDate()}</div>
+      <div style={{ color: "#fff", fontWeight: 800, fontSize: 20, marginBottom: 20 }}>출결 QR 스캔</div>
+
+      <div style={{ position: "relative", width: "100%", maxWidth: 480, aspectRatio: "1 / 1", background: "#000", borderRadius: 24, overflow: "hidden" }}>
+        <video ref={videoRef} style={{ width: "100%", height: "100%", objectFit: "cover" }} muted playsInline />
+        <canvas ref={canvasRef} style={{ display: "none" }} />
+
+        <div style={{ position: "absolute", inset: 24, border: "3px solid rgba(79,195,247,0.6)", borderRadius: 20, pointerEvents: "none" }} />
+
+        {!ready && !cameraError ? (
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#7ab3d4", fontSize: 14 }}>
+            카메라 준비 중...
+          </div>
+        ) : null}
+
+        {cameraError ? (
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#ef9a9a", fontSize: 13, textAlign: "center", padding: 20 }}>
+            {cameraError}
+          </div>
+        ) : null}
+
+        {result ? (
+          <div style={{ position: "absolute", inset: 0, background: result.error ? "rgba(80,10,10,0.92)" : "rgba(10,60,20,0.92)", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", padding: 24, textAlign: "center" }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>{result.error ? "⚠️" : "✅"}</div>
+            {result.error ? (
+              <div style={{ color: "#ef9a9a", fontSize: 16, fontWeight: 700 }}>{result.msg}</div>
+            ) : (
+              <div>
+                <div style={{ color: "#fff", fontSize: 22, fontWeight: 800 }}>{result.student.name}</div>
+                <div style={{ color: "#a5d6a7", fontSize: 15, marginTop: 6 }}>{result.type} 처리 완료 ({nowTime()})</div>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
+
+      {isLocked ? (
+        <div style={{ marginTop: 20, background: "#fce4ec", color: "#c62828", borderRadius: 12, padding: "10px 20px", fontSize: 13, fontWeight: 700 }}>
+          🔒 오늘 출결이 확정되어 더 이상 스캔할 수 없습니다.
+        </div>
+      ) : (
+        <div style={{ marginTop: 20, color: "#5a7a9a", fontSize: 13 }}>
+          QR 코드를 카메라에 비춰주세요.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ParentView(props) {
   const students = props.students;
   const attendance = props.attendance;
@@ -638,7 +822,7 @@ function ParentView(props) {
   );
 }
 
-export default function App() {
+function AdminApp() {
   const [view, setView] = useState("admin");
   const [isAuthed, setIsAuthed] = useState(function() {
     return sessionStorage.getItem("isAdmin") === "true";
@@ -814,7 +998,8 @@ export default function App() {
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={function() { setView("parent"); }} style={{ background: "rgba(255,255,255,0.1)", color: "#a0c8e8", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, padding: "8px 16px", cursor: "pointer" }}>학부모 조회</button>
-            <button onClick={function() { setShowScanner(true); }} style={{ background: "#4fc3f7", color: "#0d1f3c", border: "none", borderRadius: 10, padding: "8px 18px", fontWeight: 800, cursor: "pointer" }}>QR 스캔</button>
+            <button onClick={function() { setShowScanner(true); }} style={{ background: "#4fc3f7", color: "#0d1f3c", border: "none", borderRadius: 10, padding: "8px 18px", fontWeight: 800, cursor: "pointer" }}>QR 스캔(수동)</button>
+            <button onClick={function() { window.open(window.location.origin + "?kiosk=1", "_blank"); }} style={{ background: "#0d1f3c", color: "#4fc3f7", border: "1px solid #4fc3f7", borderRadius: 10, padding: "8px 18px", fontWeight: 800, cursor: "pointer" }}>📷 출입구 화면 열기</button>
             <button onClick={function() { sessionStorage.removeItem("isAdmin"); setIsAuthed(false); }} style={{ background: "rgba(255,255,255,0.1)", color: "#f5a0a0", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, padding: "8px 16px", cursor: "pointer" }}>로그아웃</button>
           </div>
         </div>
@@ -1010,4 +1195,14 @@ export default function App() {
       {showUnlockModal ? <UnlockModal date={selectedDate} lockInfo={lockInfo} onUnlock={unlockDay} onClose={function() { setShowUnlockModal(false); }} /> : null}
     </div>
   );
+}
+
+export default function App() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const isKioskMode = urlParams.get("kiosk") === "1";
+
+  if (isKioskMode) {
+    return <KioskScanner />;
+  }
+  return <AdminApp />;
 }
