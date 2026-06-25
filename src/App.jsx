@@ -86,13 +86,13 @@ function Badge(props) {
 function QRModal(props) {
   const student = props.student;
   const onClose = props.onClose;
-  const qrData = JSON.stringify({ id: student.id, name: student.name, classroom: student.classroom });
+  const qrData = student.id;
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(10,20,40,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
       <div style={{ background: "#fff", borderRadius: 20, padding: 36, maxWidth: 320, width: "90%", textAlign: "center" }} onClick={function(e) { e.stopPropagation(); }}>
         <div style={{ fontSize: 20, fontWeight: 800, color: "#0d1f3c" }}>{student.name}</div>
         <div style={{ fontSize: 13, color: "#5a7a9a", marginBottom: 16 }}>{student.school} {student.grade} - {student.classroom}</div>
-        <img src={generateQRUrl(qrData, 200)} alt="QR" width={200} height={200} />
+        <img src={generateQRUrl(qrData, 400)} alt="QR" width={200} height={200} />
         <div style={{ fontFamily: "monospace", fontSize: 13, color: "#3a5a7a", marginTop: 12, marginBottom: 16 }}>{student.id}</div>
         <button onClick={onClose} style={{ background: "#1a3a5c", color: "#fff", border: "none", borderRadius: 10, padding: "10px 32px", cursor: "pointer" }}>닫기</button>
       </div>
@@ -655,7 +655,7 @@ function KioskScanner() {
   function handleDetected(raw) {
     let parsed = null;
     try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
-    const id = parsed && parsed.id ? parsed.id : raw;
+    const id = (parsed && parsed.id ? parsed.id : raw).trim().toUpperCase();
 
     const now = Date.now();
     if (lastScanRef.current.id === id && (now - lastScanRef.current.time) < 4000) {
