@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, addDoc, onSnapshot, setDoc, doc, updateDoc, deleteDoc } from "firebase/firestore";
 import * as XLSX from "xlsx";
+import jsQR from "jsqr";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDdhs01usjOPXu5F0GW6XFwYDoDJ9uirJ4",
@@ -65,17 +66,6 @@ function dateToWeekday(dateStr) {
   const parts = dateStr.split("-");
   const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
   return days[d.getDay()];
-}
-
-function loadJsQR() {
-  return new Promise(function(resolve, reject) {
-    if (window.jsQR) { resolve(window.jsQR); return; }
-    const script = document.createElement("script");
-    script.src = "https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js";
-    script.onload = function() { resolve(window.jsQR); };
-    script.onerror = function() { reject(new Error("jsQR 로드 실패")); };
-    document.head.appendChild(script);
-  });
 }
 
 function Badge(props) {
@@ -624,9 +614,7 @@ function KioskScanner() {
 
   useEffect(function() {
     let active = true;
-    loadJsQR().then(function() {
-      return navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-    }).then(function(stream) {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(function(stream) {
       if (!active) { stream.getTracks().forEach(function(t) { t.stop(); }); return; }
       streamRef.current = stream;
       if (videoRef.current) {
@@ -649,7 +637,7 @@ function KioskScanner() {
         const ctx = canvas.getContext("2d");
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = window.jsQR ? window.jsQR(imageData.data, imageData.width, imageData.height) : null;
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
         if (code && code.data) {
           handleDetected(code.data);
         }
