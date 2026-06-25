@@ -590,6 +590,14 @@ function KioskScanner() {
   const [result, setResult] = useState(null);
   const [ready, setReady] = useState(false);
 
+  const studentsRef = useRef([]);
+  const attendanceRef = useRef({});
+  const isLockedRef = useRef(false);
+
+  useEffect(function() { studentsRef.current = students; }, [students]);
+  useEffect(function() { attendanceRef.current = attendance; }, [attendance]);
+  useEffect(function() { isLockedRef.current = isLocked; }, [isLocked]);
+
   useEffect(function() {
     const unsubStudents = onSnapshot(collection(db, "students"), function(snap) {
       const list = snap.docs.map(function(d) {
@@ -667,16 +675,16 @@ function KioskScanner() {
   }
 
   function processCheckIn(id) {
-    const student = students.find(function(s) { return s.id === id; });
+    const student = studentsRef.current.find(function(s) { return s.id === id; });
     if (!student) {
       setResult({ error: true, msg: "등록되지 않은 QR입니다.", time: Date.now() });
       return;
     }
-    if (isLocked) {
+    if (isLockedRef.current) {
       setResult({ error: true, msg: "오늘 출결은 이미 확정되어 처리할 수 없습니다.", time: Date.now() });
       return;
     }
-    const att = attendance[student.id] || {};
+    const att = attendanceRef.current[student.id] || {};
     if (att.checkin && att.checkout) {
       setResult({ error: true, msg: student.name + " 학생은 이미 퇴실 처리되었습니다.", time: Date.now() });
       return;
